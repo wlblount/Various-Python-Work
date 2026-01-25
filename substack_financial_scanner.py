@@ -69,6 +69,7 @@ KNOWN_TICKERS = {
 
 # Popular financial Substacks to scan
 DEFAULT_FINANCIAL_SUBSTACKS = [
+    # Tech/Finance/Economics
     'thegeneralist',          # The Generalist - tech/finance
     'netinterest',            # Net Interest - financial services
     'marketsentiment',        # Market Sentiment
@@ -82,6 +83,21 @@ DEFAULT_FINANCIAL_SUBSTACKS = [
     'mattstoller',            # Matt Stoller - Big/Monopoly
     'platformer',             # Tech/Business
     'dirtycapitalism',        # Dirty Capitalism
+    # Value Investing / Stock Analysis
+    'alluvialcapital',        # Exploring with Alluvial Capital
+    'valuedegen',             # Value Degen's Substack
+    'ragingbullinvestments',  # Raging Bull Investments
+    'specialsituations',      # Triple S Special Situations Investing
+    'marginofsanity',         # Margin of Sanity
+    'fenixvanlangerode',      # Fenix Vanlangerode
+    'colubeat',               # Colubeat Investment Desk
+    'scavengersledger',       # Scavenger's Ledger
+    'valuedontlie',           # Value Don't Lie
+    'kairosresearch',         # Kairos Research
+    'theatomicmoat',          # The Atomic Moat
+    'bearstone',              # Bearstone
+    'stockanalysiscompilation',  # Stock Analysis Compilation
+    '310value',               # 310 Value's Newsletter
 ]
 
 
