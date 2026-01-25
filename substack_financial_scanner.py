@@ -135,6 +135,44 @@ class Article:
     published_dt: Optional[datetime] = None
 
 
+def check_page_for_paid_status(url: str) -> Optional[bool]:
+    """
+    Fetch the actual article page and check for PAID/FREE indicator.
+    Returns True if paid, False if free, None if can't determine.
+    """
+    if not url:
+        return None
+
+    content = fetch_url(url, timeout=10)
+    if not content:
+        return None
+
+    try:
+        html_text = content.decode('utf-8', errors='ignore').lower()
+
+        # Look for Substack's paid indicator patterns in the page
+        # Pattern: "· paid" or ">paid<" or "class="paid"" near the date
+        if '· paid' in html_text or '>paid<' in html_text:
+            return True
+        if '· free' in html_text or '>free<' in html_text:
+            return False
+
+        # Check meta tags
+        if 'content="paid"' in html_text:
+            return True
+        if 'content="free"' in html_text:
+            return False
+
+        # Check for paywall elements
+        if 'paywall' in html_text and 'class="paywall"' in html_text:
+            return True
+
+    except Exception:
+        pass
+
+    return None
+
+
 def parse_published_date(date_str: str) -> Optional[datetime]:
     """Parse RSS publication date string into datetime object."""
     if not date_str:
@@ -307,11 +345,25 @@ def parse_rss_feed(xml_content: bytes) -> list:
             pubDate = item.find('pubDate')
             content = item.find('{http://purl.org/rss/1.0/modules/content/}encoded')
 
+            # Check for Substack-specific enclosure (podcasts/paid indicator)
+            enclosure = item.find('enclosure')
+
+            # Check all child elements for any "paid" or "access" indicators
+            is_paid_from_feed = False
+            for child in item:
+                tag_lower = child.tag.lower()
+                text_lower = (child.text or '').lower()
+                if 'paid' in tag_lower or 'paid' in text_lower:
+                    is_paid_from_feed = True
+                if 'access' in tag_lower and 'paid' in text_lower:
+                    is_paid_from_feed = True
+
             entry['title'] = title.text if title is not None else 'Untitled'
             entry['link'] = link.text if link is not None else ''
             entry['summary'] = description.text if description is not None else ''
             entry['published'] = pubDate.text if pubDate is not None else ''
             entry['content'] = content.text if content is not None else entry['summary']
+            entry['is_paid_from_feed'] = is_paid_from_feed
 
             entries.append(entry)
 
@@ -351,8 +403,14 @@ def fetch_substack_feed(publication: str) -> Optional[list]:
     return parse_rss_feed(content)
 
 
-def scan_publication(publication: str, max_articles: int = 10) -> list:
-    """Scan a single Substack publication for financial articles."""
+def scan_publication(publication: str, max_articles: int = 10, verify_access: bool = False) -> list:
+    """Scan a single Substack publication for financial articles.
+
+    Args:
+        publication: Substack publication name
+        max_articles: Maximum articles to fetch
+        verify_access: If True, fetch each article page to verify paid/free status (slower)
+    """
     articles = []
 
     entries = fetch_substack_feed(publication)
@@ -364,13 +422,28 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
         link = entry.get('link', '')
         published = entry.get('published', '')
         content = entry.get('content', '') or entry.get('summary', '')
+        is_paid_from_feed = entry.get('is_paid_from_feed', False)
 
         # Extract stock symbols from title and content
         full_text = f"{title} {content}"
         symbols = extract_stock_symbols(full_text)
 
-        # Determine if free
-        free = is_article_free(content, title)
+        # Determine if free - check multiple sources
+        free = None
+
+        # First check RSS feed indicator
+        if is_paid_from_feed:
+            free = False
+
+        # If --verify-access, check the actual page (most accurate)
+        if verify_access and free is None:
+            page_paid = check_page_for_paid_status(link)
+            if page_paid is not None:
+                free = not page_paid
+
+        # Fall back to content analysis
+        if free is None:
+            free = is_article_free(content, title)
 
         # Parse publication date
         published_dt = parse_published_date(published)
@@ -396,6 +469,7 @@ def scan_substacks(publications: list = None,
                    only_with_tickers: bool = False,
                    only_free: bool = False,
                    start_date: datetime = None,
+                   verify_access: bool = False,
                    verbose: bool = True) -> list:
     """
     Scan multiple Substack publications for financial articles.
@@ -406,6 +480,7 @@ def scan_substacks(publications: list = None,
         only_with_tickers: Only return articles that mention stock tickers
         only_free: Only return free articles
         start_date: Only return articles published on or after this date
+        verify_access: Fetch each article page to verify paid/free status (slower)
         verbose: Print progress information
 
     Returns:
@@ -420,7 +495,7 @@ def scan_substacks(publications: list = None,
         if verbose:
             print(f"Scanning {pub}.substack.com...")
 
-        articles = scan_publication(pub, max_articles_per_pub)
+        articles = scan_publication(pub, max_articles_per_pub, verify_access)
 
         if verbose and articles:
             print(f"  Found {len(articles)} articles")
@@ -518,6 +593,11 @@ def main():
         help='Only show free articles'
     )
     parser.add_argument(
+        '--verify-access',
+        action='store_true',
+        help='Fetch each article page to verify paid/free status (slower but more accurate)'
+    )
+    parser.add_argument(
         '-q', '--quiet',
         action='store_true',
         help='Suppress progress output'
@@ -580,6 +660,7 @@ def main():
         only_with_tickers=args.tickers_only,
         only_free=args.free_only,
         start_date=start_date,
+        verify_access=args.verify_access,
         verbose=not args.quiet
     )
 
