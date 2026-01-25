@@ -18,8 +18,11 @@ from typing import Optional
 from dataclasses import dataclass, field
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 import ssl
 import json
+import os
 
 
 # Common stock ticker pattern: $AAPL or standalone like AAPL, TSLA
@@ -67,22 +70,120 @@ KNOWN_TICKERS = {
     'ARM', 'SMCI', 'AVGO', 'MU', 'QCOM', 'TXN', 'MRVL', 'KLAC', 'LRCX', 'ASML'
 }
 
-# Popular financial Substacks to scan
-DEFAULT_FINANCIAL_SUBSTACKS = [
-    'thegeneralist',          # The Generalist - tech/finance
-    'netinterest',            # Net Interest - financial services
-    'marketsentiment',        # Market Sentiment
-    'compoundingquality',     # Compounding Quality
-    'investoramnesia',        # Investor Amnesia
-    'capitalflows',           # Capital Flows
-    'thediff',                # The Diff - Byrne Hobart
-    'notboring',              # Not Boring - Packy McCormick
-    'kyla',                   # Kyla Scanlon
-    'noahpinion',             # Noah Smith - economics
-    'mattstoller',            # Matt Stoller - Big/Monopoly
-    'platformer',             # Tech/Business
-    'dirtycapitalism',        # Dirty Capitalism
+# Config file path (same directory as script)
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'my_substacks.txt')
+
+# Initial publications to populate config file on first run
+INITIAL_PUBLICATIONS = [
+    'thegeneralist',
+    'netinterest',
+    'marketsentiment',
+    'compoundingquality',
+    'investoramnesia',
+    'capitalflows',
+    'thediff',
+    'notboring',
+    'kyla',
+    'noahpinion',
+    'mattstoller',
+    'platformer',
+    'dirtycapitalism',
+    'alluvialcapital',
+    'valuedegen',
+    'ragingbullinvestments',
+    'specialsituations',
+    'marginofsanity',
+    'fenixvanlangerode',
+    'colubeat',
+    'scavengersledger',
+    'valuedontlie',
+    'kairosresearch',
+    'theatomicmoat',
+    'bearstone',
+    'stockanalysiscompilation',
+    '310value',
+    'edelweisscapital',
+    'epbresearch',
+    'klementoninvesting',
+    'marketjiujitsu',
+    'moontowerweekly',
+    'multibaggermonitor',
+    'pernasresearch',
+    'philoinvestor',
+    'prometheusresearch',
+    'edgealchemy',
+    'pennyonthedollar',
+    'unreasonableasymmetric',
+    'journalofavalueinvestor',
+    'lakecornelia',
+    'businessmodelmastery',
+    'behindthebalancesheet',
+    'clarkstreetvalue',
+    'specialsituationinvest',
 ]
+
+
+def get_config_path() -> str:
+    """Get the path to the config file."""
+    return CONFIG_FILE
+
+
+def load_publications() -> list:
+    """Load publications from config file. Creates file with initial list if it doesn't exist."""
+    config_path = get_config_path()
+
+    # If config doesn't exist, create it with initial publications
+    if not os.path.exists(config_path):
+        save_publications(INITIAL_PUBLICATIONS)
+        print(f"Created config file: {config_path}")
+        return INITIAL_PUBLICATIONS.copy()
+
+    # Load from file
+    publications = []
+    with open(config_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if line and not line.startswith('#'):
+                publications.append(line)
+
+    return publications
+
+
+def save_publications(publications: list) -> None:
+    """Save publications to config file."""
+    config_path = get_config_path()
+    with open(config_path, 'w') as f:
+        f.write("# Substack publications to scan (one per line)\n")
+        f.write("# Lines starting with # are comments\n\n")
+        for pub in sorted(set(publications)):  # Remove duplicates and sort
+            f.write(f"{pub}\n")
+
+
+def add_publication(name: str) -> bool:
+    """Add a publication to the config file. Returns True if added, False if already exists."""
+    name = name.lower().strip()
+    publications = load_publications()
+
+    if name in publications:
+        return False
+
+    publications.append(name)
+    save_publications(publications)
+    return True
+
+
+def remove_publication(name: str) -> bool:
+    """Remove a publication from the config file. Returns True if removed, False if not found."""
+    name = name.lower().strip()
+    publications = load_publications()
+
+    if name not in publications:
+        return False
+
+    publications.remove(name)
+    save_publications(publications)
+    return True
 
 
 @dataclass
@@ -95,6 +196,72 @@ class Article:
     stock_symbols: list = field(default_factory=list)
     summary: str = ""
     published: str = ""
+    published_dt: Optional[datetime] = None
+
+
+def check_page_for_paid_status(url: str) -> Optional[bool]:
+    """
+    Fetch the actual article page and check for PAID/FREE indicator.
+    Returns True if paid, False if free, None if can't determine.
+    """
+    if not url:
+        return None
+
+    content = fetch_url(url, timeout=10)
+    if not content:
+        return None
+
+    try:
+        html_text = content.decode('utf-8', errors='ignore').lower()
+
+        # Look for Substack's paid indicator patterns in the page
+        # Pattern: "· paid" or ">paid<" or "class="paid"" near the date
+        if '· paid' in html_text or '>paid<' in html_text:
+            return True
+        if '· free' in html_text or '>free<' in html_text:
+            return False
+
+        # Check meta tags
+        if 'content="paid"' in html_text:
+            return True
+        if 'content="free"' in html_text:
+            return False
+
+        # Check for paywall elements
+        if 'paywall' in html_text and 'class="paywall"' in html_text:
+            return True
+
+    except Exception:
+        pass
+
+    return None
+
+
+def parse_published_date(date_str: str) -> Optional[datetime]:
+    """Parse RSS publication date string into datetime object."""
+    if not date_str:
+        return None
+
+    # Try RFC 2822 format (common in RSS feeds): "Thu, 22 Jan 2026 15:41:21 GMT"
+    try:
+        return parsedate_to_datetime(date_str)
+    except (ValueError, TypeError):
+        pass
+
+    # Try ISO 8601 format (common in Atom feeds): "2026-01-22T15:41:21Z"
+    iso_formats = [
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%d",
+    ]
+    for fmt in iso_formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+
+    return None
 
 
 def clean_html(text: str) -> str:
@@ -136,14 +303,34 @@ def extract_stock_symbols(text: str) -> list:
     return sorted(list(symbols))
 
 
-def is_article_free(content: str) -> bool:
-    """Determine if an article is free or paywalled based on content."""
+def is_article_free(content: str, title: str = "") -> bool:
+    """
+    Determine if an article is free or paywalled based on content.
+
+    Note: RSS feeds often only include preview/teaser content, so we default
+    to PAID/UNKNOWN unless we have strong evidence the full article is free.
+    """
     if not content:
         return False
 
     clean_content = clean_html(content)
+    content_lower = clean_content.lower()
+    title_lower = title.lower() if title else ""
 
-    # Check for paywall indicators in the text
+    # Check for explicit FREE indicators
+    free_indicators = [
+        'this post is free',
+        'free post',
+        'available to all readers',
+        'available to everyone',
+        'public post'
+    ]
+
+    for indicator in free_indicators:
+        if indicator in content_lower:
+            return True
+
+    # Check for paywall/paid indicators
     paywall_indicators = [
         'subscribe to read',
         'for paid subscribers',
@@ -154,20 +341,35 @@ def is_article_free(content: str) -> bool:
         'subscribe to continue reading',
         'rest of this post is for paid subscribers',
         'upgrade to paid',
-        'this post is for paying subscribers'
+        'this post is for paying subscribers',
+        'keep reading with a',
+        'subscription',
+        'subscribe to',
+        'paid post',
+        'premium post',
+        'members only',
+        'subscriber-only',
+        'subscribers only'
     ]
 
-    content_lower = clean_content.lower()
     for indicator in paywall_indicators:
         if indicator in content_lower:
             return False
 
-    # If we have substantial content, likely free
-    if len(clean_content) > 500:
+    # Check title for paid indicators
+    paid_title_indicators = ['paid', 'premium', 'subscriber', 'members']
+    for indicator in paid_title_indicators:
+        if indicator in title_lower:
+            return False
+
+    # RSS feeds typically contain truncated content for paid posts
+    # Very long content (>3000 chars) is more likely to be free/full article
+    # But we default to UNKNOWN (shown as PAID) to be conservative
+    if len(clean_content) > 3000:
         return True
 
-    # Default to assuming it might be paywalled if content is short
-    return len(clean_content) > 300
+    # Default: assume paid/unknown since RSS often only has teasers
+    return False
 
 
 def fetch_url(url: str, timeout: int = 15) -> Optional[bytes]:
@@ -207,11 +409,25 @@ def parse_rss_feed(xml_content: bytes) -> list:
             pubDate = item.find('pubDate')
             content = item.find('{http://purl.org/rss/1.0/modules/content/}encoded')
 
+            # Check for Substack-specific enclosure (podcasts/paid indicator)
+            enclosure = item.find('enclosure')
+
+            # Check all child elements for any "paid" or "access" indicators
+            is_paid_from_feed = False
+            for child in item:
+                tag_lower = child.tag.lower()
+                text_lower = (child.text or '').lower()
+                if 'paid' in tag_lower or 'paid' in text_lower:
+                    is_paid_from_feed = True
+                if 'access' in tag_lower and 'paid' in text_lower:
+                    is_paid_from_feed = True
+
             entry['title'] = title.text if title is not None else 'Untitled'
             entry['link'] = link.text if link is not None else ''
             entry['summary'] = description.text if description is not None else ''
             entry['published'] = pubDate.text if pubDate is not None else ''
             entry['content'] = content.text if content is not None else entry['summary']
+            entry['is_paid_from_feed'] = is_paid_from_feed
 
             entries.append(entry)
 
@@ -251,8 +467,14 @@ def fetch_substack_feed(publication: str) -> Optional[list]:
     return parse_rss_feed(content)
 
 
-def scan_publication(publication: str, max_articles: int = 10) -> list:
-    """Scan a single Substack publication for financial articles."""
+def scan_publication(publication: str, max_articles: int = 10, verify_access: bool = False) -> list:
+    """Scan a single Substack publication for financial articles.
+
+    Args:
+        publication: Substack publication name
+        max_articles: Maximum articles to fetch
+        verify_access: If True, fetch each article page to verify paid/free status (slower)
+    """
     articles = []
 
     entries = fetch_substack_feed(publication)
@@ -264,13 +486,31 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
         link = entry.get('link', '')
         published = entry.get('published', '')
         content = entry.get('content', '') or entry.get('summary', '')
+        is_paid_from_feed = entry.get('is_paid_from_feed', False)
 
         # Extract stock symbols from title and content
         full_text = f"{title} {content}"
         symbols = extract_stock_symbols(full_text)
 
-        # Determine if free
-        free = is_article_free(content)
+        # Determine if free - check multiple sources
+        free = None
+
+        # First check RSS feed indicator
+        if is_paid_from_feed:
+            free = False
+
+        # If --verify-access, check the actual page (most accurate)
+        if verify_access and free is None:
+            page_paid = check_page_for_paid_status(link)
+            if page_paid is not None:
+                free = not page_paid
+
+        # Fall back to content analysis
+        if free is None:
+            free = is_article_free(content, title)
+
+        # Parse publication date
+        published_dt = parse_published_date(published)
 
         article = Article(
             title=title,
@@ -279,7 +519,8 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
             is_free=free,
             stock_symbols=symbols,
             summary=clean_html(content)[:200] + "..." if content else "",
-            published=published
+            published=published,
+            published_dt=published_dt
         )
 
         articles.append(article)
@@ -288,9 +529,11 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
 
 
 def scan_substacks(publications: list = None,
-                   max_articles_per_pub: int = 10,
+                   max_articles_per_pub: int = 20,
                    only_with_tickers: bool = False,
                    only_free: bool = False,
+                   start_date: datetime = None,
+                   verify_access: bool = False,
                    verbose: bool = True) -> list:
     """
     Scan multiple Substack publications for financial articles.
@@ -300,13 +543,15 @@ def scan_substacks(publications: list = None,
         max_articles_per_pub: Maximum articles to fetch per publication
         only_with_tickers: Only return articles that mention stock tickers
         only_free: Only return free articles
+        start_date: Only return articles published on or after this date
+        verify_access: Fetch each article page to verify paid/free status (slower)
         verbose: Print progress information
 
     Returns:
         List of Article objects
     """
     if publications is None:
-        publications = DEFAULT_FINANCIAL_SUBSTACKS
+        publications = load_publications()
 
     all_articles = []
 
@@ -314,7 +559,7 @@ def scan_substacks(publications: list = None,
         if verbose:
             print(f"Scanning {pub}.substack.com...")
 
-        articles = scan_publication(pub, max_articles_per_pub)
+        articles = scan_publication(pub, max_articles_per_pub, verify_access)
 
         if verbose and articles:
             print(f"  Found {len(articles)} articles")
@@ -324,6 +569,20 @@ def scan_substacks(publications: list = None,
         all_articles.extend(articles)
 
     # Apply filters
+    if start_date:
+        # Make start_date timezone-naive for comparison if needed
+        start_date_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        filtered = []
+        for a in all_articles:
+            if a.published_dt:
+                # Make article date timezone-naive for comparison
+                article_date = a.published_dt.replace(tzinfo=None) if a.published_dt.tzinfo else a.published_dt
+                if article_date >= start_date_naive:
+                    filtered.append(a)
+            # If no date could be parsed, exclude it (can't verify it's recent)
+            # else: skip
+        all_articles = filtered
+
     if only_with_tickers:
         all_articles = [a for a in all_articles if a.stock_symbols]
 
@@ -384,8 +643,8 @@ def main():
     parser.add_argument(
         '-n', '--num-articles',
         type=int,
-        default=5,
-        help='Number of articles to fetch per publication (default: 5)'
+        default=20,
+        help='Number of articles to fetch per publication before date filter (default: 20)'
     )
     parser.add_argument(
         '--tickers-only',
@@ -396,6 +655,11 @@ def main():
         '--free-only',
         action='store_true',
         help='Only show free articles'
+    )
+    parser.add_argument(
+        '--verify-access',
+        action='store_true',
+        help='Fetch each article page to verify paid/free status (slower but more accurate)'
     )
     parser.add_argument(
         '-q', '--quiet',
@@ -415,20 +679,73 @@ def main():
     parser.add_argument(
         '--list-publications',
         action='store_true',
-        help='List default financial publications and exit'
+        help='List all publications from config file and exit'
+    )
+    parser.add_argument(
+        '--add-pub',
+        metavar='NAME',
+        help='Add a publication to your config file (e.g., --add-pub newsubstack)'
+    )
+    parser.add_argument(
+        '--remove-pub',
+        metavar='NAME',
+        help='Remove a publication from your config file'
+    )
+    parser.add_argument(
+        '-d', '--days',
+        type=int,
+        default=5,
+        help='Only show articles from the last N days (default: 5)'
+    )
+    parser.add_argument(
+        '--start-date',
+        metavar='YYYY-MM-DD',
+        help='Only show articles on or after this date (overrides --days)'
     )
 
     args = parser.parse_args()
 
     if args.list_publications:
-        print("Default financial Substack publications:")
+        pubs = load_publications()
+        print(f"Substack publications ({len(pubs)} total):")
+        print(f"Config file: {get_config_path()}")
         print("-" * 40)
-        for pub in DEFAULT_FINANCIAL_SUBSTACKS:
+        for pub in sorted(pubs):
             print(f"  {pub}.substack.com")
         return
 
+    if args.add_pub:
+        name = args.add_pub.lower().strip()
+        if add_publication(name):
+            print(f"Added: {name}.substack.com")
+            print(f"Config file: {get_config_path()}")
+        else:
+            print(f"Already exists: {name}.substack.com")
+        return
+
+    if args.remove_pub:
+        name = args.remove_pub.lower().strip()
+        if remove_publication(name):
+            print(f"Removed: {name}.substack.com")
+            print(f"Config file: {get_config_path()}")
+        else:
+            print(f"Not found: {name}.substack.com")
+        return
+
+    # Determine start date
+    if args.start_date:
+        try:
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+        except ValueError:
+            print(f"Error: Invalid date format '{args.start_date}'. Use YYYY-MM-DD.")
+            return
+    else:
+        start_date = datetime.now() - timedelta(days=args.days)
+
     print("=" * 70)
     print("SUBSTACK FINANCIAL ARTICLE SCANNER")
+    print("=" * 70)
+    print(f"Showing articles from: {start_date.strftime('%Y-%m-%d')} onwards")
     print("=" * 70)
 
     articles = scan_substacks(
@@ -436,6 +753,8 @@ def main():
         max_articles_per_pub=args.num_articles,
         only_with_tickers=args.tickers_only,
         only_free=args.free_only,
+        start_date=start_date,
+        verify_access=args.verify_access,
         verbose=not args.quiet
     )
 
