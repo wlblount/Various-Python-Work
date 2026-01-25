@@ -18,6 +18,8 @@ from typing import Optional
 from dataclasses import dataclass, field
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 import ssl
 import json
 
@@ -130,6 +132,34 @@ class Article:
     stock_symbols: list = field(default_factory=list)
     summary: str = ""
     published: str = ""
+    published_dt: Optional[datetime] = None
+
+
+def parse_published_date(date_str: str) -> Optional[datetime]:
+    """Parse RSS publication date string into datetime object."""
+    if not date_str:
+        return None
+
+    # Try RFC 2822 format (common in RSS feeds): "Thu, 22 Jan 2026 15:41:21 GMT"
+    try:
+        return parsedate_to_datetime(date_str)
+    except (ValueError, TypeError):
+        pass
+
+    # Try ISO 8601 format (common in Atom feeds): "2026-01-22T15:41:21Z"
+    iso_formats = [
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%d",
+    ]
+    for fmt in iso_formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+
+    return None
 
 
 def clean_html(text: str) -> str:
@@ -342,6 +372,9 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
         # Determine if free
         free = is_article_free(content, title)
 
+        # Parse publication date
+        published_dt = parse_published_date(published)
+
         article = Article(
             title=title,
             link=link,
@@ -349,7 +382,8 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
             is_free=free,
             stock_symbols=symbols,
             summary=clean_html(content)[:200] + "..." if content else "",
-            published=published
+            published=published,
+            published_dt=published_dt
         )
 
         articles.append(article)
@@ -361,6 +395,7 @@ def scan_substacks(publications: list = None,
                    max_articles_per_pub: int = 10,
                    only_with_tickers: bool = False,
                    only_free: bool = False,
+                   start_date: datetime = None,
                    verbose: bool = True) -> list:
     """
     Scan multiple Substack publications for financial articles.
@@ -370,6 +405,7 @@ def scan_substacks(publications: list = None,
         max_articles_per_pub: Maximum articles to fetch per publication
         only_with_tickers: Only return articles that mention stock tickers
         only_free: Only return free articles
+        start_date: Only return articles published on or after this date
         verbose: Print progress information
 
     Returns:
@@ -394,6 +430,21 @@ def scan_substacks(publications: list = None,
         all_articles.extend(articles)
 
     # Apply filters
+    if start_date:
+        # Make start_date timezone-naive for comparison if needed
+        start_date_naive = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
+        filtered = []
+        for a in all_articles:
+            if a.published_dt:
+                # Make article date timezone-naive for comparison
+                article_date = a.published_dt.replace(tzinfo=None) if a.published_dt.tzinfo else a.published_dt
+                if article_date >= start_date_naive:
+                    filtered.append(a)
+            # If no date could be parsed, include it (don't filter out)
+            else:
+                filtered.append(a)
+        all_articles = filtered
+
     if only_with_tickers:
         all_articles = [a for a in all_articles if a.stock_symbols]
 
@@ -487,6 +538,17 @@ def main():
         action='store_true',
         help='List default financial publications and exit'
     )
+    parser.add_argument(
+        '-d', '--days',
+        type=int,
+        default=5,
+        help='Only show articles from the last N days (default: 5)'
+    )
+    parser.add_argument(
+        '--start-date',
+        metavar='YYYY-MM-DD',
+        help='Only show articles on or after this date (overrides --days)'
+    )
 
     args = parser.parse_args()
 
@@ -497,8 +559,20 @@ def main():
             print(f"  {pub}.substack.com")
         return
 
+    # Determine start date
+    if args.start_date:
+        try:
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+        except ValueError:
+            print(f"Error: Invalid date format '{args.start_date}'. Use YYYY-MM-DD.")
+            return
+    else:
+        start_date = datetime.now() - timedelta(days=args.days)
+
     print("=" * 70)
     print("SUBSTACK FINANCIAL ARTICLE SCANNER")
+    print("=" * 70)
+    print(f"Showing articles from: {start_date.strftime('%Y-%m-%d')} onwards")
     print("=" * 70)
 
     articles = scan_substacks(
@@ -506,6 +580,7 @@ def main():
         max_articles_per_pub=args.num_articles,
         only_with_tickers=args.tickers_only,
         only_free=args.free_only,
+        start_date=start_date,
         verbose=not args.quiet
     )
 
