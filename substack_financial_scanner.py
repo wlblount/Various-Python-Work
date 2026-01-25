@@ -136,14 +136,34 @@ def extract_stock_symbols(text: str) -> list:
     return sorted(list(symbols))
 
 
-def is_article_free(content: str) -> bool:
-    """Determine if an article is free or paywalled based on content."""
+def is_article_free(content: str, title: str = "") -> bool:
+    """
+    Determine if an article is free or paywalled based on content.
+
+    Note: RSS feeds often only include preview/teaser content, so we default
+    to PAID/UNKNOWN unless we have strong evidence the full article is free.
+    """
     if not content:
         return False
 
     clean_content = clean_html(content)
+    content_lower = clean_content.lower()
+    title_lower = title.lower() if title else ""
 
-    # Check for paywall indicators in the text
+    # Check for explicit FREE indicators
+    free_indicators = [
+        'this post is free',
+        'free post',
+        'available to all readers',
+        'available to everyone',
+        'public post'
+    ]
+
+    for indicator in free_indicators:
+        if indicator in content_lower:
+            return True
+
+    # Check for paywall/paid indicators
     paywall_indicators = [
         'subscribe to read',
         'for paid subscribers',
@@ -154,20 +174,35 @@ def is_article_free(content: str) -> bool:
         'subscribe to continue reading',
         'rest of this post is for paid subscribers',
         'upgrade to paid',
-        'this post is for paying subscribers'
+        'this post is for paying subscribers',
+        'keep reading with a',
+        'subscription',
+        'subscribe to',
+        'paid post',
+        'premium post',
+        'members only',
+        'subscriber-only',
+        'subscribers only'
     ]
 
-    content_lower = clean_content.lower()
     for indicator in paywall_indicators:
         if indicator in content_lower:
             return False
 
-    # If we have substantial content, likely free
-    if len(clean_content) > 500:
+    # Check title for paid indicators
+    paid_title_indicators = ['paid', 'premium', 'subscriber', 'members']
+    for indicator in paid_title_indicators:
+        if indicator in title_lower:
+            return False
+
+    # RSS feeds typically contain truncated content for paid posts
+    # Very long content (>3000 chars) is more likely to be free/full article
+    # But we default to UNKNOWN (shown as PAID) to be conservative
+    if len(clean_content) > 3000:
         return True
 
-    # Default to assuming it might be paywalled if content is short
-    return len(clean_content) > 300
+    # Default: assume paid/unknown since RSS often only has teasers
+    return False
 
 
 def fetch_url(url: str, timeout: int = 15) -> Optional[bytes]:
@@ -270,7 +305,7 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
         symbols = extract_stock_symbols(full_text)
 
         # Determine if free
-        free = is_article_free(content)
+        free = is_article_free(content, title)
 
         article = Article(
             title=title,
