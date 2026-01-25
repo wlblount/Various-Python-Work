@@ -392,7 +392,7 @@ def scan_publication(publication: str, max_articles: int = 10) -> list:
 
 
 def scan_substacks(publications: list = None,
-                   max_articles_per_pub: int = 10,
+                   max_articles_per_pub: int = 20,
                    only_with_tickers: bool = False,
                    only_free: bool = False,
                    start_date: datetime = None,
@@ -440,9 +440,8 @@ def scan_substacks(publications: list = None,
                 article_date = a.published_dt.replace(tzinfo=None) if a.published_dt.tzinfo else a.published_dt
                 if article_date >= start_date_naive:
                     filtered.append(a)
-            # If no date could be parsed, include it (don't filter out)
-            else:
-                filtered.append(a)
+            # If no date could be parsed, exclude it (can't verify it's recent)
+            # else: skip
         all_articles = filtered
 
     if only_with_tickers:
@@ -505,8 +504,8 @@ def main():
     parser.add_argument(
         '-n', '--num-articles',
         type=int,
-        default=5,
-        help='Number of articles to fetch per publication (default: 5)'
+        default=20,
+        help='Number of articles to fetch per publication before date filter (default: 20)'
     )
     parser.add_argument(
         '--tickers-only',
