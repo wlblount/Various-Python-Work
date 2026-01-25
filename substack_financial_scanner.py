@@ -98,6 +98,22 @@ DEFAULT_FINANCIAL_SUBSTACKS = [
     'bearstone',              # Bearstone
     'stockanalysiscompilation',  # Stock Analysis Compilation
     '310value',               # 310 Value's Newsletter
+    # Research / Macro / More Value Investing
+    'edelweisscapital',       # Edelweiss Capital Research
+    'epbresearch',            # EPB Research
+    'klementoninvesting',     # Klement on Investing
+    'marketjiujitsu',         # Market Jiujitsu
+    'moontowerweekly',        # Moontower Weekly
+    'multibaggermonitor',     # Multibagger Monitor
+    'pernasresearch',         # Pernas Research
+    'philoinvestor',          # Philoinvestor
+    'prometheusresearch',     # Prometheus Research: Macro Mechanics
+    'edgealchemy',            # Edge Alchemy
+    'pennyonthedollar',       # Penny on the Dollar
+    'unreasonableasymmetric', # UnreasonableAsymmetric's Substack
+    'journalofavalueinvestor',  # The Journal of a Value Investor
+    'lakecornelia',           # Lake Cornelia Commentary
+    'businessmodelmastery',   # Business Model Mastery
 ]
 
 
