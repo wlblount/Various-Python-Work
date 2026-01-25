@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import ssl
 import json
+import os
 
 
 # Common stock ticker pattern: $AAPL or standalone like AAPL, TSLA
@@ -69,57 +70,120 @@ KNOWN_TICKERS = {
     'ARM', 'SMCI', 'AVGO', 'MU', 'QCOM', 'TXN', 'MRVL', 'KLAC', 'LRCX', 'ASML'
 }
 
-# Popular financial Substacks to scan
-DEFAULT_FINANCIAL_SUBSTACKS = [
-    # Tech/Finance/Economics
-    'thegeneralist',          # The Generalist - tech/finance
-    'netinterest',            # Net Interest - financial services
-    'marketsentiment',        # Market Sentiment
-    'compoundingquality',     # Compounding Quality
-    'investoramnesia',        # Investor Amnesia
-    'capitalflows',           # Capital Flows
-    'thediff',                # The Diff - Byrne Hobart
-    'notboring',              # Not Boring - Packy McCormick
-    'kyla',                   # Kyla Scanlon
-    'noahpinion',             # Noah Smith - economics
-    'mattstoller',            # Matt Stoller - Big/Monopoly
-    'platformer',             # Tech/Business
-    'dirtycapitalism',        # Dirty Capitalism
-    # Value Investing / Stock Analysis
-    'alluvialcapital',        # Exploring with Alluvial Capital
-    'valuedegen',             # Value Degen's Substack
-    'ragingbullinvestments',  # Raging Bull Investments
-    'specialsituations',      # Triple S Special Situations Investing
-    'marginofsanity',         # Margin of Sanity
-    'fenixvanlangerode',      # Fenix Vanlangerode
-    'colubeat',               # Colubeat Investment Desk
-    'scavengersledger',       # Scavenger's Ledger
-    'valuedontlie',           # Value Don't Lie
-    'kairosresearch',         # Kairos Research
-    'theatomicmoat',          # The Atomic Moat
-    'bearstone',              # Bearstone
-    'stockanalysiscompilation',  # Stock Analysis Compilation
-    '310value',               # 310 Value's Newsletter
-    # Research / Macro / More Value Investing
-    'edelweisscapital',       # Edelweiss Capital Research
-    'epbresearch',            # EPB Research
-    'klementoninvesting',     # Klement on Investing
-    'marketjiujitsu',         # Market Jiujitsu
-    'moontowerweekly',        # Moontower Weekly
-    'multibaggermonitor',     # Multibagger Monitor
-    'pernasresearch',         # Pernas Research
-    'philoinvestor',          # Philoinvestor
-    'prometheusresearch',     # Prometheus Research: Macro Mechanics
-    'edgealchemy',            # Edge Alchemy
-    'pennyonthedollar',       # Penny on the Dollar
-    'unreasonableasymmetric', # UnreasonableAsymmetric's Substack
-    'journalofavalueinvestor',  # The Journal of a Value Investor
-    'lakecornelia',           # Lake Cornelia Commentary
-    'businessmodelmastery',   # Business Model Mastery
-    'behindthebalancesheet',  # Behind the Balance Sheet
-    'clarkstreetvalue',       # Clark Street Value
-    'specialsituationinvest', # Special Situation Investments
+# Config file path (same directory as script)
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'my_substacks.txt')
+
+# Initial publications to populate config file on first run
+INITIAL_PUBLICATIONS = [
+    'thegeneralist',
+    'netinterest',
+    'marketsentiment',
+    'compoundingquality',
+    'investoramnesia',
+    'capitalflows',
+    'thediff',
+    'notboring',
+    'kyla',
+    'noahpinion',
+    'mattstoller',
+    'platformer',
+    'dirtycapitalism',
+    'alluvialcapital',
+    'valuedegen',
+    'ragingbullinvestments',
+    'specialsituations',
+    'marginofsanity',
+    'fenixvanlangerode',
+    'colubeat',
+    'scavengersledger',
+    'valuedontlie',
+    'kairosresearch',
+    'theatomicmoat',
+    'bearstone',
+    'stockanalysiscompilation',
+    '310value',
+    'edelweisscapital',
+    'epbresearch',
+    'klementoninvesting',
+    'marketjiujitsu',
+    'moontowerweekly',
+    'multibaggermonitor',
+    'pernasresearch',
+    'philoinvestor',
+    'prometheusresearch',
+    'edgealchemy',
+    'pennyonthedollar',
+    'unreasonableasymmetric',
+    'journalofavalueinvestor',
+    'lakecornelia',
+    'businessmodelmastery',
+    'behindthebalancesheet',
+    'clarkstreetvalue',
+    'specialsituationinvest',
 ]
+
+
+def get_config_path() -> str:
+    """Get the path to the config file."""
+    return CONFIG_FILE
+
+
+def load_publications() -> list:
+    """Load publications from config file. Creates file with initial list if it doesn't exist."""
+    config_path = get_config_path()
+
+    # If config doesn't exist, create it with initial publications
+    if not os.path.exists(config_path):
+        save_publications(INITIAL_PUBLICATIONS)
+        print(f"Created config file: {config_path}")
+        return INITIAL_PUBLICATIONS.copy()
+
+    # Load from file
+    publications = []
+    with open(config_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            # Skip empty lines and comments
+            if line and not line.startswith('#'):
+                publications.append(line)
+
+    return publications
+
+
+def save_publications(publications: list) -> None:
+    """Save publications to config file."""
+    config_path = get_config_path()
+    with open(config_path, 'w') as f:
+        f.write("# Substack publications to scan (one per line)\n")
+        f.write("# Lines starting with # are comments\n\n")
+        for pub in sorted(set(publications)):  # Remove duplicates and sort
+            f.write(f"{pub}\n")
+
+
+def add_publication(name: str) -> bool:
+    """Add a publication to the config file. Returns True if added, False if already exists."""
+    name = name.lower().strip()
+    publications = load_publications()
+
+    if name in publications:
+        return False
+
+    publications.append(name)
+    save_publications(publications)
+    return True
+
+
+def remove_publication(name: str) -> bool:
+    """Remove a publication from the config file. Returns True if removed, False if not found."""
+    name = name.lower().strip()
+    publications = load_publications()
+
+    if name not in publications:
+        return False
+
+    publications.remove(name)
+    save_publications(publications)
+    return True
 
 
 @dataclass
@@ -487,7 +551,7 @@ def scan_substacks(publications: list = None,
         List of Article objects
     """
     if publications is None:
-        publications = DEFAULT_FINANCIAL_SUBSTACKS
+        publications = load_publications()
 
     all_articles = []
 
@@ -615,7 +679,17 @@ def main():
     parser.add_argument(
         '--list-publications',
         action='store_true',
-        help='List default financial publications and exit'
+        help='List all publications from config file and exit'
+    )
+    parser.add_argument(
+        '--add-pub',
+        metavar='NAME',
+        help='Add a publication to your config file (e.g., --add-pub newsubstack)'
+    )
+    parser.add_argument(
+        '--remove-pub',
+        metavar='NAME',
+        help='Remove a publication from your config file'
     )
     parser.add_argument(
         '-d', '--days',
@@ -632,10 +706,30 @@ def main():
     args = parser.parse_args()
 
     if args.list_publications:
-        print("Default financial Substack publications:")
+        pubs = load_publications()
+        print(f"Substack publications ({len(pubs)} total):")
+        print(f"Config file: {get_config_path()}")
         print("-" * 40)
-        for pub in DEFAULT_FINANCIAL_SUBSTACKS:
+        for pub in sorted(pubs):
             print(f"  {pub}.substack.com")
+        return
+
+    if args.add_pub:
+        name = args.add_pub.lower().strip()
+        if add_publication(name):
+            print(f"Added: {name}.substack.com")
+            print(f"Config file: {get_config_path()}")
+        else:
+            print(f"Already exists: {name}.substack.com")
+        return
+
+    if args.remove_pub:
+        name = args.remove_pub.lower().strip()
+        if remove_publication(name):
+            print(f"Removed: {name}.substack.com")
+            print(f"Config file: {get_config_path()}")
+        else:
+            print(f"Not found: {name}.substack.com")
         return
 
     # Determine start date
