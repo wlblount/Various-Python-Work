@@ -1,0 +1,6 @@
+# No external dependencies required!
+# This script uses only Python standard library modules.
+#
+# Optional dependencies for extended functionality:
+# feedparser>=6.0.0   # Alternative RSS parsing (not required)
+# requests>=2.28.0    # Alternative HTTP client (not required)
