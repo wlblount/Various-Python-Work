@@ -114,6 +114,9 @@ DEFAULT_FINANCIAL_SUBSTACKS = [
     'journalofavalueinvestor',  # The Journal of a Value Investor
     'lakecornelia',           # Lake Cornelia Commentary
     'businessmodelmastery',   # Business Model Mastery
+    'behindthebalancesheet',  # Behind the Balance Sheet
+    'clarkstreetvalue',       # Clark Street Value
+    'specialsituationinvest', # Special Situation Investments
 ]
 
 
