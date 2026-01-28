@@ -762,7 +762,13 @@ def main():
     print(f"RESULTS: Found {len(articles)} articles")
     print(f"{'='*70}")
 
-    for article in articles:
+    # Sort articles by date (oldest first, most recent last)
+    articles_sorted = sorted(
+        articles,
+        key=lambda a: a.published_dt or datetime.min
+    )
+
+    for article in articles_sorted:
         print(format_article(article, show_summary=args.summary))
 
     # Summary of tickers found
